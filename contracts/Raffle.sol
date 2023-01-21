@@ -14,6 +14,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 /* Errors */
 error Raffle__NotEnoughETHEntered();
 error Raffle__TransferFailed();
+error Raffle__RaffleNotOpen();
 
 
 /**@title A sample Raffle Contract
@@ -22,7 +23,11 @@ error Raffle__TransferFailed();
  * @dev This implements the Chainlink VRF Version 2
  */
 contract Raffle is VRFConsumerBaseV2{
-
+     /* Type declarations */
+    enum RaffleState {
+        OPEN,
+        CALCULATING
+    }
     /*State Variables*/
      // Chainlink VRF Variables
     uint256 private immutable i_entranceFee;
@@ -36,6 +41,7 @@ contract Raffle is VRFConsumerBaseV2{
 
     // Lottery Variables
     address private s_recentWinner;
+    RaffleState private s_raffleState;
 
     /*Events*/
     event RaffleEnter(address indexed player);
@@ -55,7 +61,8 @@ contract Raffle is VRFConsumerBaseV2{
        
         i_subscriptionId = subscriptionId;
         i_entranceFee = entranceFee;
-       
+        s_raffleState = RaffleState.OPEN;
+
         i_callbackGasLimit = callbackGasLimit;
     }
 
@@ -63,6 +70,9 @@ contract Raffle is VRFConsumerBaseV2{
         // require (msg.value > i_entranceFee, "Not enough ETH!!")
         if (msg.value < i_entranceFee) {
             revert Raffle__NotEnoughETHEntered();
+        }
+         if (s_raffleState != RaffleState.OPEN) {
+            revert Raffle__RaffleNotOpen();
         }
         s_players.push(payable(msg.sender)); 
         // Emit an event when we update a dynamic array or mapping
@@ -111,6 +121,7 @@ contract Raffle is VRFConsumerBaseV2{
         // 202 % 10 = 2
         uint256 indexOfWinner = randowmWords[0] % s_players.length; //to selec the index of the winner
         address payable recentWinner = s_players[indexOfWinner];
+        s_raffleState = RaffleState.OPEN;
         s_recentWinner = recentWinner;
         (bool success, ) = recentWinner.call{value: address(this).balance}("");
         // require(success, "Transfer failed");
