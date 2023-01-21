@@ -10,6 +10,7 @@ pragma solidity ^0.8.7;
 
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
 
 /* Errors */
 error Raffle__NotEnoughETHEntered();
@@ -22,7 +23,7 @@ error Raffle__RaffleNotOpen();
  * @notice This contract is for creating a sample raffle contract
  * @dev This implements the Chainlink VRF Version 2
  */
-contract Raffle is VRFConsumerBaseV2{
+contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
      /* Type declarations */
     enum RaffleState {
         OPEN,
@@ -30,18 +31,21 @@ contract Raffle is VRFConsumerBaseV2{
     }
     /*State Variables*/
      // Chainlink VRF Variables
-    uint256 private immutable i_entranceFee;
-    address payable[] private s_players;
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
-    bytes32 private immutable i_gasLane;
     uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
     uint32 private immutable i_callbackGasLimit;
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
     uint32 private constant NUM_WORDS = 1;
 
     // Lottery Variables
+    uint256 private immutable i_interval;
+    uint256 private immutable i_entranceFee;
+    uint256 private s_lastTimeStamp;
     address private s_recentWinner;
+    address payable[] private s_players;
     RaffleState private s_raffleState;
+
 
     /*Events*/
     event RaffleEnter(address indexed player);
@@ -53,12 +57,13 @@ contract Raffle is VRFConsumerBaseV2{
         address vrfCoordinatorV2,
         uint64 subscriptionId,
         bytes32 gasLane, // keyHash
+        uint256 interval,
         uint256 entranceFee,
         uint32 callbackGasLimit
         ) VRFConsumerBaseV2(vrfCoordinatorV2){
         i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
         i_gasLane = gasLane;
-       
+        i_interval = interval;       
         i_subscriptionId = subscriptionId;
         i_entranceFee = entranceFee;
         s_raffleState = RaffleState.OPEN;
@@ -91,6 +96,12 @@ contract Raffle is VRFConsumerBaseV2{
      */
     function checkUpkeep(bytes memory /* checkData */) public view override returns(bool upkeepNeeded, bytes memory /* performData */)
     {
+        bool isOpen = RaffleState.OPEN == s_raffleState;
+        bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
+        bool hasPlayers = s_players.length > 0;
+        bool hasBalance = address(this).balance > 0;
+        upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);
+        return (upkeepNeeded, "0x0"); // can we comment this out?
         
     }
 
@@ -121,8 +132,10 @@ contract Raffle is VRFConsumerBaseV2{
         // 202 % 10 = 2
         uint256 indexOfWinner = randowmWords[0] % s_players.length; //to selec the index of the winner
         address payable recentWinner = s_players[indexOfWinner];
-        s_raffleState = RaffleState.OPEN;
+        
         s_recentWinner = recentWinner;
+        s_raffleState = RaffleState.OPEN;
+
         (bool success, ) = recentWinner.call{value: address(this).balance}("");
         // require(success, "Transfer failed");
         if (!success) {
