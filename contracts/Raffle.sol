@@ -13,6 +13,7 @@ import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
 
 /* Errors */
+error Raffle__UpkeepNotNeeded(uint256 currentBalance, uint256 numPlayers, uint256 raffleState);
 error Raffle__NotEnoughETHEntered();
 error Raffle__TransferFailed();
 error Raffle__RaffleNotOpen();
@@ -67,12 +68,13 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         i_subscriptionId = subscriptionId;
         i_entranceFee = entranceFee;
         s_raffleState = RaffleState.OPEN;
-
+        s_lastTimeStamp = block.timestamp;
         i_callbackGasLimit = callbackGasLimit;
     }
 
     function enterRaffle() public payable{
         // require (msg.value > i_entranceFee, "Not enough ETH!!")
+        // require(s_raffleState == RaffleState.OPEN, "Raffle is not open");
         if (msg.value < i_entranceFee) {
             revert Raffle__NotEnoughETHEntered();
         }
@@ -105,37 +107,55 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         
     }
 
-    function requestRandomWinner() external{
-        //Request the random number
-        //Once we get it, do something with it
-        //2 transaction process
+   /**
+     * @dev Once `checkUpkeep` is returning `true`, this function is called
+     * and it kicks off a Chainlink VRF call to get a random winner.
+     */
+    function performUpkeep(
+        bytes calldata /* performData */
+    ) external override {
+        (bool upkeepNeeded, ) = checkUpkeep("");
+        // require(upkeepNeeded, "Upkeep not needed");
+        if (!upkeepNeeded) {
+            revert Raffle__UpkeepNotNeeded(
+                address(this).balance,
+                s_players.length,
+                uint256(s_raffleState)
+            );
+        }
+        s_raffleState = RaffleState.CALCULATING;
         uint256 requestId = i_vrfCoordinator.requestRandomWords(
-            i_gasLane, //gasLane
+            i_gasLane,
             i_subscriptionId,
             REQUEST_CONFIRMATIONS,
             i_callbackGasLimit,
             NUM_WORDS
         );
+        // Quiz... is this redundant?
         emit RequestedRaffleWinner(requestId);
     }
 
+
+     /**
+     * @dev This is the function that Chainlink VRF node
+     * calls to send the money to the random winner.
+     */
     function fulfillRandomWords(
-        uint256, /* requestId,*/ 
-        uint256[] memory randowmWords
-        ) 
-    internal override{
+        uint256, /* requestId */
+        uint256[] memory randomWords
+    ) internal override {
         // s_players size 10
         // randomNumber 202
         // 202 % 10 ? what's doesn't divide evenly into 202?
         // 20 * 10 = 200
         // 2
         // 202 % 10 = 2
-        uint256 indexOfWinner = randowmWords[0] % s_players.length; //to selec the index of the winner
+        uint256 indexOfWinner = randomWords[0] % s_players.length;
         address payable recentWinner = s_players[indexOfWinner];
-        
         s_recentWinner = recentWinner;
+        s_players = new address payable[](0);
         s_raffleState = RaffleState.OPEN;
-
+        s_lastTimeStamp = block.timestamp;
         (bool success, ) = recentWinner.call{value: address(this).balance}("");
         // require(success, "Transfer failed");
         if (!success) {
@@ -147,16 +167,40 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
     /** Getter Functions */
 
     /* View / Pure functions */
-    function getEntranceFee() public view returns (uint256){
-        return i_entranceFee;
+     function getRaffleState() public view returns (RaffleState) {
+        return s_raffleState;
     }
 
-    function getPlayer(uint256 index) public view returns(address){
+    function getNumWords() public pure returns (uint256) {
+        return NUM_WORDS;
+    }
+
+    function getRequestConfirmations() public pure returns (uint256) {
+        return REQUEST_CONFIRMATIONS;
+    }
+
+    function getRecentWinner() public view returns (address) {
+        return s_recentWinner;
+    }
+
+    function getPlayer(uint256 index) public view returns (address) {
         return s_players[index];
     }
 
-      function getRecentWinner() public view returns (address) {
-        return s_recentWinner;
+    function getLastTimeStamp() public view returns (uint256) {
+        return s_lastTimeStamp;
+    }
+
+    function getInterval() public view returns (uint256) {
+        return i_interval;
+    }
+
+    function getEntranceFee() public view returns (uint256) {
+        return i_entranceFee;
+    }
+
+    function getNumberOfPlayers() public view returns (uint256) {
+        return s_players.length;
     }
 
 }
