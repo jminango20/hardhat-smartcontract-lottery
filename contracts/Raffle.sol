@@ -10,7 +10,7 @@ pragma solidity ^0.8.7;
 
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/AutomationCompatibleInterface.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/KeeperCompatibleInterface.sol";
 
 /* Errors */
 error Raffle__UpkeepNotNeeded(uint256 currentBalance, uint256 numPlayers, uint256 raffleState);
@@ -20,11 +20,11 @@ error Raffle__RaffleNotOpen();
 
 
 /**@title A sample Raffle Contract
- * @author Patrick Collins
+ * @author J. Minango
  * @notice This contract is for creating a sample raffle contract
  * @dev This implements the Chainlink VRF Version 2
  */
-contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
+contract Raffle is VRFConsumerBaseV2, KeeperCompatibleInterface {
      /* Type declarations */
     enum RaffleState {
         OPEN,
@@ -55,7 +55,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
 
     /* Functions */
     constructor(
-        address vrfCoordinatorV2,
+        address vrfCoordinatorV2, //contract
         uint64 subscriptionId,
         bytes32 gasLane, // keyHash
         uint256 interval,
@@ -102,9 +102,7 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
         bool hasPlayers = s_players.length > 0;
         bool hasBalance = address(this).balance > 0;
-        upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);
-        return (upkeepNeeded, "0x0"); // can we comment this out?
-        
+        upkeepNeeded = (timePassed && isOpen && hasBalance && hasPlayers);        
     }
 
    /**
@@ -135,7 +133,6 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         emit RequestedRaffleWinner(requestId);
     }
 
-
      /**
      * @dev This is the function that Chainlink VRF node
      * calls to send the money to the random winner.
@@ -153,8 +150,8 @@ contract Raffle is VRFConsumerBaseV2, AutomationCompatibleInterface {
         uint256 indexOfWinner = randomWords[0] % s_players.length;
         address payable recentWinner = s_players[indexOfWinner];
         s_recentWinner = recentWinner;
-        s_players = new address payable[](0);
-        s_raffleState = RaffleState.OPEN;
+        s_raffleState = RaffleState.OPEN; //reset Raffle Game
+        s_players = new address payable[](0); //reset the winner
         s_lastTimeStamp = block.timestamp;
         (bool success, ) = recentWinner.call{value: address(this).balance}("");
         // require(success, "Transfer failed");
